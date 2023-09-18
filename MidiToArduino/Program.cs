@@ -82,6 +82,8 @@ int lastOffNoteTimeSigPart1 = 0;
 int lastOffNoteTimeSigPart2 = 0;
 int lastOffNoteTempo = 0;
 
+double durationRemainder = 0;
+
 List<string> notes1 = new List<string>();
 List<string> notes2 = new List<string>();
 List<int> durations1 = new List<int>();
@@ -89,6 +91,7 @@ List<int> durations2 = new List<int>();
 
 const string searchDivisionFull = "| Division=";
 const string searchTrack = "Track #";
+const string searchTrackEnd = "|End of track";
 const string searchTimeSig = "|Time Sig";
 const string searchTempo = "|Tempo";
 const string searchTempoMicros = "| micros\\quarter=";
@@ -128,6 +131,13 @@ foreach (string line in File.ReadLines(file))
             return;
         }
 
+        Console.WriteLine($"");
+        Console.WriteLine($"---- Track: {currentTrack} ----");
+    }
+
+    // Reset track related stuff at end of track
+    if (line.Contains(searchTrackEnd))
+    {
         currentMeasure = 0;
         currentBeat = 0;
         currentDivision = 0;
@@ -145,7 +155,11 @@ foreach (string line in File.ReadLines(file))
         lastOffNoteTimeSigPart2 = 0;
         lastOffNoteTempo = 0;
 
-        Console.WriteLine($"---- Track: {currentTrack} ----");
+        if (durationRemainder != 0)
+        {
+            Console.WriteLine($"Duration remainder: {durationRemainder}");
+            durationRemainder = 0;
+        }
     }
 
     // Get time
@@ -344,11 +358,20 @@ foreach (string line in File.ReadLines(file))
                     }
 
                     // Calculate duration
-                    double totalDivision = ((double)divisionPassed + (double)beatPassed * (double)divisionFull + (double)measurePassed * (double)divisionFull * 4.0) * ((double)lastOffNoteTimeSigPart1 / (double)lastOffNoteTimeSigPart2);
+                    double totalDivision =
+                        ((double)divisionPassed + 
+                        (double)beatPassed * (double)divisionFull + 
+                        (double)measurePassed * (double)divisionFull * 4.0) * ((double)lastOffNoteTimeSigPart1 / (double)lastOffNoteTimeSigPart2);
                     double millis = (totalDivision / (double)divisionFull) * (double)lastOffNoteTempo;
-                    int duration = (int)Math.Round(millis);
-
-                    // TODO! Duration kan være upræcis. Implementer noget for at holde synkronisering.
+                    int duration = (int)millis;
+                    // Make up for unprecise duration.
+                    durationRemainder += millis % 1.0;
+                    if (durationRemainder >= 1.0)
+                    {
+                        Console.WriteLine($"Duration remainder: {durationRemainder}");
+                        duration++;
+                        durationRemainder--;
+                    }
 
                     Console.WriteLine($"Pause: Time passed: {measurePassed}:{beatPassed}:{divisionPassed}, Duration: {duration}");
 
@@ -409,11 +432,20 @@ foreach (string line in File.ReadLines(file))
                 }
 
                 // Calculate duration
-                double totalDivision = ((double)divisionPassed + (double)beatPassed * (double)divisionFull + (double)measurePassed * (double)divisionFull * 4.0) * ((double)lastOnNoteTimeSigPart1 / (double)lastOnNoteTimeSigPart2);
+                double totalDivision = 
+                    ((double)divisionPassed +
+                    (double)beatPassed * (double)divisionFull + 
+                    (double)measurePassed * (double)divisionFull * 4.0) * ((double)lastOnNoteTimeSigPart1 / (double)lastOnNoteTimeSigPart2);
                 double millis = (int)((totalDivision / (double)divisionFull) * (double)lastOnNoteTempo);
-                int duration = (int)Math.Round(millis);
-
-                // TODO! Duration kan være upræcis. Implementer noget for at holde synkronisering.
+                int duration = (int)millis;
+                // Make up for unprecise duration.
+                durationRemainder += millis % 1.0;
+                if (durationRemainder >= 1.0)
+                {
+                    Console.WriteLine($"Duration remainder: {durationRemainder}");
+                    duration++;
+                    durationRemainder--;
+                }
 
                 Console.WriteLine($"Note: Time passed: {measurePassed}:{beatPassed}:{divisionPassed}, Duration: {duration}");
 
