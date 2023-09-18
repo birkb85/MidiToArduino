@@ -1,4 +1,7 @@
-﻿using System.IO;
+﻿// Source available on:
+// https://github.com/birkb85/MidiToArduino
+
+using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
 
@@ -57,8 +60,8 @@ bool firstLine = true;
 
 int divisionFull = 0;
 int currentTrack = -1;
-int currentMeasure = 1;
-int currentBeat = 1;
+int currentMeasure = 0;
+int currentBeat = 0;
 int currentDivision = 0;
 Dictionary<string, string> timeSigs = new Dictionary<string, string>();
 int currentTimeSigPart1 = 0;
@@ -124,6 +127,10 @@ foreach (string line in File.ReadLines(file))
             Console.ReadKey();
             return;
         }
+
+        currentMeasure = 0;
+        currentBeat = 0;
+        currentDivision = 0;
 
         lastOnNoteMeasure = 1;
         lastOnNoteBeat = 1;
@@ -195,248 +202,273 @@ foreach (string line in File.ReadLines(file))
         }
     }
 
-    // Get configuration
-    if (currentTrack == 0)
+    if (currentMeasure > 0)
     {
-        // Get Time Sig
-        if (line.Contains(searchTimeSig))
+        // Get configuration
+        if (currentTrack == 0)
         {
-            int timeSigPos = line.IndexOf(searchTimeSig);
-            int startPos = line.IndexOf('|', timeSigPos + 1);
-            int endPos = line.IndexOf('|', startPos + 1);
-            string timeSigStr = line.Substring(startPos + 1, endPos - startPos - 1).Trim();
-            //Console.WriteLine($"Time Sig Full: #{timeSigStr}#");
+            // Get Time Sig
+            if (line.Contains(searchTimeSig))
+            {
+                int timeSigPos = line.IndexOf(searchTimeSig);
+                int startPos = line.IndexOf('|', timeSigPos + 1);
+                int endPos = line.IndexOf('|', startPos + 1);
+                string timeSigStr = line.Substring(startPos + 1, endPos - startPos - 1).Trim();
+                //Console.WriteLine($"Time Sig Full: #{timeSigStr}#");
+
+                string time = $"{currentMeasure}:{currentBeat}:{currentDivision}";
+                timeSigs.Add(time, timeSigStr);
+                Console.WriteLine($"Time: {time}, Time Sig: {timeSigStr}");
+            }
+
+            // Get Tempo
+            if (line.Contains(searchTempo) && line.Contains(searchTempoMicros))
+            {
+                int microsPos = line.IndexOf(searchTempoMicros);
+                string microsStr = line.Substring(microsPos + searchTempoMicros.Length);
+                success = int.TryParse(microsStr, out int micros);
+                if (!success)
+                {
+                    Console.WriteLine($"Error: Micros not legal: {microsStr}");
+                    Console.ReadKey();
+                    return;
+                }
+
+                string time = $"{currentMeasure}:{currentBeat}:{currentDivision}";
+                int millis = micros / 1000;
+                tempos.Add(time, millis);
+                Console.WriteLine($"Time: {time}, Tempo: {millis} millis per quarter");
+            }
+        }
+        else if (currentTrack > 0)
+        {
+            if (divisionFull == 0)
+            {
+                Console.WriteLine($"Error: No Division found");
+                Console.ReadKey();
+                return;
+            }
+
+            if (timeSigs.Count == 0)
+            {
+                Console.WriteLine($"Error: No Time Sigs found");
+                Console.ReadKey();
+                return;
+            }
+
+            if (tempos.Count == 0)
+            {
+                Console.WriteLine($"Error: No Tempos found");
+                Console.ReadKey();
+                return;
+            }
 
             string time = $"{currentMeasure}:{currentBeat}:{currentDivision}";
-            timeSigs.Add(time, timeSigStr);
-            Console.WriteLine($"Time: {time}, Time Sig: {timeSigStr}");
-        }
 
-        // Get Tempo
-        if (line.Contains(searchTempo) && line.Contains(searchTempoMicros))
-        {
-            int microsPos = line.IndexOf(searchTempoMicros);
-            string microsStr = line.Substring(microsPos + searchTempoMicros.Length);
-            success = int.TryParse(microsStr, out int micros);
-            if (!success)
+            if (timeSigs.ContainsKey(time))
             {
-                Console.WriteLine($"Error: Micros not legal: {microsStr}");
-                Console.ReadKey();
-                return;
+                string[] parts = timeSigs[time].Split('/');
+                if (parts.Length != 2)
+                {
+                    Console.WriteLine($"Error: Time Sig not legal: {timeSigs[time]}");
+                    Console.ReadKey();
+                    return;
+                }
+
+                success = int.TryParse(parts[0], out int part1);
+                if (!success)
+                {
+                    Console.WriteLine($"Error: Time Sig part not legal: {parts[0]}");
+                    Console.ReadKey();
+                    return;
+                }
+
+                success = int.TryParse(parts[1], out int part2);
+                if (!success)
+                {
+                    Console.WriteLine($"Error: Time Sig part not legal: {parts[1]}");
+                    Console.ReadKey();
+                    return;
+                }
+
+                currentTimeSigPart1 = part1;
+                currentTimeSigPart2 = part2;
+
+                if (lastOffNoteTimeSigPart1 == 0 && lastOffNoteTimeSigPart2 == 0)
+                {
+                    lastOffNoteTimeSigPart1 = part1;
+                    lastOffNoteTimeSigPart2 = part2;
+                }
             }
 
-            string time = $"{currentMeasure}:{currentBeat}:{currentDivision}";
-            int millis = micros / 1000;
-            tempos.Add(time, millis);
-            Console.WriteLine($"Time: {time}, Tempo: {millis} millis per quarter");
-        }
-    }
-
-    if (currentTrack > 0)
-    {
-        if (divisionFull == 0)
-        {
-            Console.WriteLine($"Error: No Division found");
-            Console.ReadKey();
-            return;
-        }
-
-        if (timeSigs.Count == 0)
-        {
-            Console.WriteLine($"Error: No Time Sigs found");
-            Console.ReadKey();
-            return;
-        }
-
-        if (tempos.Count == 0)
-        {
-            Console.WriteLine($"Error: No Tempos found");
-            Console.ReadKey();
-            return;
-        }
-
-        string time = $"{currentMeasure}:{currentBeat}:{currentDivision}";
-
-        if (timeSigs.ContainsKey(time))
-        {
-            string[] parts = timeSigs[time].Split('/');
-            if (parts.Length != 2)
+            if (tempos.ContainsKey(time))
             {
-                Console.WriteLine($"Error: Time Sig not legal: {timeSigs[time]}");
-                Console.ReadKey();
-                return;
+                currentTempo = tempos[time];
+
+                if (lastOffNoteTempo == 0)
+                {
+                    lastOffNoteTempo = tempos[time];
+                }
             }
 
-            success = int.TryParse(parts[0], out int part1);
-            if (!success)
+            if (line.Contains(searchOnNote))
             {
-                Console.WriteLine($"Error: Time Sig part not legal: {parts[0]}");
-                Console.ReadKey();
-                return;
+                // Pause
+                if (lastOffNoteMeasure != currentMeasure ||
+                    lastOffNoteBeat != currentBeat ||
+                    lastOffNoteDivision != currentDivision)
+                {
+                    // Time passed
+                    int measurePassed = currentMeasure - lastOffNoteMeasure;
+
+                    int beatPassed;
+                    if (currentBeat >= lastOffNoteBeat)
+                    {
+                        beatPassed = currentBeat - lastOffNoteBeat;
+                    }
+                    else
+                    {
+                        beatPassed = lastOffNoteTimeSigPart1 + currentBeat - lastOffNoteBeat;
+                        measurePassed--;
+                    }
+
+                    int divisionPassed;
+                    if (currentDivision >= lastOffNoteDivision)
+                    {
+                        divisionPassed = currentDivision - lastOffNoteDivision;
+                    }
+                    else
+                    {
+                        divisionPassed = divisionFull + currentDivision - lastOffNoteDivision;
+                        beatPassed--;
+                    }
+
+                    // Calculate duration
+                    double totalDivision = ((double)divisionPassed + (double)beatPassed * (double)divisionFull + (double)measurePassed * (double)divisionFull * 4.0) * ((double)lastOffNoteTimeSigPart1 / (double)lastOffNoteTimeSigPart2);
+                    double millis = (totalDivision / (double)divisionFull) * (double)lastOffNoteTempo;
+                    int duration = (int)Math.Round(millis);
+
+                    // TODO! Duration kan være upræcis. Implementer noget for at holde synkronisering.
+
+                    Console.WriteLine($"Pause: Time passed: {measurePassed}:{beatPassed}:{divisionPassed}, Duration: {duration}");
+
+                    switch (currentTrack)
+                    {
+                        case 1:
+                            notes1.Add("0");
+                            durations1.Add(duration);
+                            break;
+
+                        case 2:
+                            notes2.Add("0");
+                            durations2.Add(duration);
+                            break;
+                    }
+                }
+
+                // Note
+                int pitchPos = line.IndexOf(searchPitch) + searchPitch.Length;
+                string pitch = line.Substring(pitchPos, 3).Replace(" ", "").Replace('#', 'S').ToUpper();
+                string note = $"NOTE_{pitch}";
+
+                string timeSig = currentTimeSigPart1 + "/" + currentTimeSigPart2;
+                Console.WriteLine($"Time: {time}, Time Sig: {timeSig}, Tempo {currentTempo}, On Note: {note}");
+
+                lastOnNoteMeasure = currentMeasure;
+                lastOnNoteBeat = currentBeat;
+                lastOnNoteDivision = currentDivision;
+                lastOnNoteTimeSigPart1 = currentTimeSigPart1;
+                lastOnNoteTimeSigPart2 = currentTimeSigPart2;
+                lastOnNoteTempo = currentTempo;
             }
-
-            success = int.TryParse(parts[1], out int part2);
-            if (!success)
-            {
-                Console.WriteLine($"Error: Time Sig part not legal: {parts[1]}");
-                Console.ReadKey();
-                return;
-            }
-
-            currentTimeSigPart1 = part1;
-            currentTimeSigPart2 = part2;
-
-            if (lastOffNoteTimeSigPart1 == 0 && lastOffNoteTimeSigPart2 == 0)
-            {
-                lastOffNoteTimeSigPart1 = part1;
-                lastOffNoteTimeSigPart2 = part2;
-            }
-        }
-
-        if (tempos.ContainsKey(time))
-        {
-            currentTempo = tempos[time];
-
-            if (lastOffNoteTempo == 0)
-            {
-                lastOffNoteTempo = tempos[time];
-            }
-        }
-
-        if (line.Contains(searchOnNote))
-        {
-            // Pause
-            if (lastOffNoteMeasure != currentMeasure ||
-                lastOffNoteBeat != currentBeat ||
-                lastOffNoteDivision != currentDivision)
+            else if (line.Contains(searchOffNote))
             {
                 // Time passed
-                int measurePassed = currentMeasure - lastOffNoteMeasure;
+                int measurePassed = currentMeasure - lastOnNoteMeasure;
 
                 int beatPassed;
-                if (currentBeat >= lastOffNoteBeat)
+                if (currentBeat >= lastOnNoteBeat)
                 {
-                    beatPassed = currentBeat - lastOffNoteBeat;
+                    beatPassed = currentBeat - lastOnNoteBeat;
                 }
                 else
                 {
-                    beatPassed = lastOffNoteTimeSigPart1 + currentBeat - lastOffNoteBeat;
+                    beatPassed = lastOnNoteTimeSigPart1 + currentBeat - lastOnNoteBeat;
                     measurePassed--;
                 }
 
                 int divisionPassed;
-                if (currentDivision >= lastOffNoteDivision)
+                if (currentDivision >= lastOnNoteDivision)
                 {
-                    divisionPassed = currentDivision - lastOffNoteDivision;
+                    divisionPassed = currentDivision - lastOnNoteDivision;
                 }
                 else
                 {
-                    divisionPassed = divisionFull + currentDivision - lastOffNoteDivision;
+                    divisionPassed = divisionFull + currentDivision - lastOnNoteDivision;
                     beatPassed--;
                 }
 
                 // Calculate duration
-                // TODO! Jeg tror ikke udregning er helt rigtig... For hvis der går en hel measure i 4/4 skal measure jo ganges med 4 og ikke med 1...
-                int duration = (int)Math.Round(
-                    ((double)measurePassed * ((double)lastOffNoteTimeSigPart1 / (double)lastOffNoteTimeSigPart2) * (double)lastOffNoteTempo) +
-                    ((double)beatPassed * ((double)lastOffNoteTimeSigPart1 / (double)lastOffNoteTimeSigPart2) * (double)lastOffNoteTempo) +
-                    (((double)divisionPassed / (double)divisionFull) * (double)lastOffNoteTempo));
-                Console.WriteLine($"Pause: Time passed: {measurePassed}:{beatPassed}:{divisionPassed}, Duration: {duration}");
+                double totalDivision = ((double)divisionPassed + (double)beatPassed * (double)divisionFull + (double)measurePassed * (double)divisionFull * 4.0) * ((double)lastOnNoteTimeSigPart1 / (double)lastOnNoteTimeSigPart2);
+                double millis = (int)((totalDivision / (double)divisionFull) * (double)lastOnNoteTempo);
+                int duration = (int)Math.Round(millis);
+
+                // TODO! Duration kan være upræcis. Implementer noget for at holde synkronisering.
+
+                Console.WriteLine($"Note: Time passed: {measurePassed}:{beatPassed}:{divisionPassed}, Duration: {duration}");
+
+                // Note
+                int pitchPos = line.IndexOf(searchPitch) + searchPitch.Length;
+                string pitch = line.Substring(pitchPos, 3).Replace(" ", "").Replace('#', 'S').ToUpper();
+                string note = $"NOTE_{pitch}";
 
                 switch (currentTrack)
                 {
                     case 1:
-                        notes1.Add("0");
+                        notes1.Add(note);
                         durations1.Add(duration);
                         break;
 
                     case 2:
-                        notes2.Add("0");
+                        notes2.Add(note);
                         durations2.Add(duration);
                         break;
                 }
+
+                string timeSig = currentTimeSigPart1 + "/" + currentTimeSigPart2;
+                Console.WriteLine($"Time: {time}, Time Sig: {timeSig}, Tempo {currentTempo}, Off Note: {note}, Duration: {duration}");
+
+                lastOffNoteMeasure = currentMeasure;
+                lastOffNoteBeat = currentBeat;
+                lastOffNoteDivision = currentDivision;
+                lastOffNoteTimeSigPart1 = currentTimeSigPart1;
+                lastOffNoteTimeSigPart2 = currentTimeSigPart2;
+                lastOffNoteTempo = currentTempo;
             }
-
-            // Note
-            int pitchPos = line.IndexOf(searchPitch) + searchPitch.Length;
-            string pitch = line.Substring(pitchPos, 3).Replace(" ", "").Replace('#', 'S').ToUpper();
-            string note = $"NOTE_{pitch}";
-
-            string timeSig = currentTimeSigPart1 + "/" + currentTimeSigPart2;
-            Console.WriteLine($"Time: {time}, Time Sig: {timeSig}, Tempo {currentTempo}, On Note: {note}");
-
-            lastOnNoteMeasure = currentMeasure;
-            lastOnNoteBeat = currentBeat;
-            lastOnNoteDivision = currentDivision;
-            lastOnNoteTimeSigPart1 = currentTimeSigPart1;
-            lastOnNoteTimeSigPart2 = currentTimeSigPart2;
-            lastOnNoteTempo = currentTempo;
-        }
-
-        if (line.Contains(searchOffNote))
-        {
-            // Time passed
-            int measurePassed = currentMeasure - lastOnNoteMeasure;
-
-            int beatPassed;
-            if (currentBeat >= lastOnNoteBeat)
-            {
-                beatPassed = currentBeat - lastOnNoteBeat;
-            }
-            else
-            {
-                beatPassed = lastOnNoteTimeSigPart1 + currentBeat - lastOnNoteBeat;
-                measurePassed--;
-            }
-
-            int divisionPassed;
-            if (currentDivision >= lastOnNoteDivision)
-            {
-                divisionPassed = currentDivision - lastOnNoteDivision;
-            }
-            else
-            {
-                divisionPassed = divisionFull + currentDivision - lastOnNoteDivision;
-                beatPassed--;
-            }
-
-            // Calculate duration
-            // TODO! Jeg tror ikke udregning er helt rigtig... For hvis der går en hel measure i 4/4 skal measure jo ganges med 4 og ikke med 1...
-            int duration = (int)Math.Round(
-                ((double)measurePassed * ((double)lastOnNoteTimeSigPart1 / (double)lastOnNoteTimeSigPart2) * (double)lastOnNoteTempo) +
-                ((double)beatPassed * ((double)lastOnNoteTimeSigPart1 / (double)lastOnNoteTimeSigPart2) * (double)lastOnNoteTempo) +
-                (((double)divisionPassed / (double)divisionFull) * (double)lastOnNoteTempo));
-            Console.WriteLine($"Note: Time passed: {measurePassed}:{beatPassed}:{divisionPassed}, Duration: {duration}");
-
-            // Note
-            int pitchPos = line.IndexOf(searchPitch) + searchPitch.Length;
-            string pitch = line.Substring(pitchPos, 3).Replace(" ", "").Replace('#', 'S').ToUpper();
-            string note = $"NOTE_{pitch}";
-
-            switch (currentTrack)
-            {
-                case 1:
-                    notes1.Add(note);
-                    durations1.Add(duration);
-                    break;
-
-                case 2:
-                    notes2.Add(note);
-                    durations2.Add(duration);
-                    break;
-            }
-
-            string timeSig = currentTimeSigPart1 + "/" + currentTimeSigPart2;
-            Console.WriteLine($"Time: {time}, Time Sig: {timeSig}, Tempo {currentTempo}, Off Note: {note}, Duration: {duration}");
-
-            lastOffNoteMeasure = currentMeasure;
-            lastOffNoteBeat = currentBeat;
-            lastOffNoteDivision = currentDivision;
-            lastOffNoteTimeSigPart1 = currentTimeSigPart1;
-            lastOffNoteTimeSigPart2 = currentTimeSigPart2;
-            lastOffNoteTempo = currentTempo;
         }
     }
+}
+
+// Small pause after playing song + equal durations on tracks
+notes1.Add("0");
+notes2.Add("0");
+int pause = 2000;
+int totalDurations1 = durations1.Sum();
+int totalDurations2 = durations2.Sum();
+if (totalDurations1 > totalDurations2)
+{
+    durations1.Add(pause);
+    durations2.Add(totalDurations1 - totalDurations2 + pause);
+}
+else if (totalDurations1 < totalDurations2)
+{
+    durations1.Add(totalDurations2 - totalDurations1 + pause);
+    durations2.Add(pause);
+}
+else
+{
+    durations1.Add(pause);
+    durations2.Add(pause);
 }
 
 int size1 = notes1.Count;
