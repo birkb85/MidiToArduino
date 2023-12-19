@@ -6,4 +6,4 @@ Place exported files in the same folder as this application.<br/>
 Run this application and follow the instructions to convert the disassembled midi file.<br/>
 <br/>
 The converted header file can then be used together with the Arduino project found here:<br/>
-[ENTER URL]<br/>
+https://github.com/birkb85/BirKen_Music_Player_Plus<br/>
